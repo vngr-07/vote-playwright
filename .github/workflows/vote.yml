@@ -1,7 +1,9 @@
 name: Vote Playwright
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # permite disparo manual
+  schedule:
+    - cron: '*/3 * * * *' # executa a cada 3 minutos
 
 jobs:
   vote:
