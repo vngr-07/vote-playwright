@@ -1,4 +1,4 @@
-name: Vote BreakTudo Awards
+name: Vote Playwright
 
 on:
   workflow_dispatch:
@@ -6,23 +6,36 @@ on:
 jobs:
   vote:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20
-
-      - name: Clean NPM cache
-        run: npm cache clean --force
+          node-version: '20'
 
       - name: Install dependencies
-        run: |
-          npm ci
-          npx playwright install
+        run: npm ci
 
-      - name: Run vote script
+      - name: Install Playwright browsers
+        run: npx playwright install
+
+      - name: Run voting script
         env:
           API_KEY_2CAPTCHA: ${{ secrets.API_KEY_2CAPTCHA }}
         run: npx ts-node src/votacao.ts
+
+      # Upload de vídeos
+      - name: Upload videos as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: vote-videos
+          path: videos/
+
+      # Upload de screenshots
+      - name: Upload screenshots as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: vote-screenshots
+          path: screenshots/
