@@ -28,14 +28,14 @@ jobs:
 
       # Upload de vídeos
       - name: Upload videos as artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vote-videos
           path: videos/
 
       # Upload de screenshots
       - name: Upload screenshots as artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vote-screenshots
           path: screenshots/
