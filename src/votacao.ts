@@ -62,14 +62,10 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
       '.close-ad',
       '[data-dismiss="modal"]'
     ];
-
     for (const sel of dismissSelectors) {
       const elements = await page.$$(sel);
       for (const el of elements) {
-        try {
-          await el.click({ force: true });
-          await page.waitForTimeout(1000);
-        } catch {}
+        try { await el.click({ force: true }); await page.waitForTimeout(1000); } catch {}
       }
     }
 
@@ -109,10 +105,19 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
         const match = src.match(/k=([a-zA-Z0-9_-]+)/);
         if (match) {
           const captchaToken = await solveTurnstile(match[1], URL);
+
+          // Insere token dinamicamente
           await page.evaluate((token) => {
-            const input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
-            if (input) input.value = token;
+            let input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
+            if (!input) {
+              input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'cf-turnstile-response';
+              document.querySelector('form')?.appendChild(input);
+            }
+            input.value = token;
           }, captchaToken);
+
           console.log('✅ CAPTCHA resolvido via 2Captcha');
         }
       }
