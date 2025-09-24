@@ -1,0 +1,28 @@
+name: Vote BreakTudo Awards
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Clean NPM cache
+        run: npm cache clean --force
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npx playwright install
+
+      - name: Run vote script
+        env:
+          API_KEY_2CAPTCHA: ${{ secrets.API_KEY_2CAPTCHA }}
+        run: npx ts-node src/votacao.ts

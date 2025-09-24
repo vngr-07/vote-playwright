@@ -1,0 +1,16 @@
+{
+  "name": "vote-playwright",
+  "version": "1.0.0",
+  "description": "Automação de votação BreakTudo Awards com Playwright + 2Captcha",
+  "scripts": {
+    "start": "ts-node src/votacao.ts"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "playwright": "^1.46.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}
