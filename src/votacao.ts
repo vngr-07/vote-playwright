@@ -37,8 +37,15 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
   let page: Page | undefined;
 
   try {
-    // Launch headless with video recording
-    browser = await chromium.launch({ headless: true, args: ['--window-size=1680,1050'] });
+    // Launch headless with anti-bot features
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--window-size=1680,1050',
+        '--disable-blink-features=AutomationControlled'
+      ]
+    });
+
     const context = await browser.newContext({
       viewport: { width: 1680, height: 1050 },
       recordVideo: { dir: videosDir, size: { width: 1680, height: 1050 } }
@@ -62,12 +69,12 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
       for (const el of elements) {
         try {
           await el.click({ force: true });
-          await page.waitForTimeout(1000); // espera overlay sumir
+          await page.waitForTimeout(1000);
         } catch {}
       }
     }
 
-    // Espera candidato estar visível
+    // Espera candidato visível
     await page.waitForSelector(`text="${CANDIDATO}"`, { state: 'visible', timeout: 20000 });
     const candidatoEl = await page.$(`text="${CANDIDATO}"`);
     if (!candidatoEl) throw new Error('Candidato não encontrado');
@@ -86,14 +93,12 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
     await votarBtn.click({ force: true });
     await page.screenshot({ path: path.join(screenshotsDir, 'after_click_votar.png') });
 
-    // CAPTCHA Turnstile
-    await page.waitForSelector('.cf-turnstile > div', { timeout: 20000 });
-    const iframe = await page.$('iframe[src*="turnstile"]');
-    if (!iframe) throw new Error('CAPTCHA Turnstile não encontrado');
-
-    const siteKey = await iframe.getAttribute('src');
-    if (!siteKey) throw new Error('Não foi possível obter sitekey do CAPTCHA');
-    const match = siteKey.match(/k=([a-zA-Z0-9_-]+)/);
+    // Espera o Turnstile aparecer dentro do iframe
+    const iframeElement = await page.waitForSelector('iframe[src*="turnstile"]', { timeout: 40000 });
+    if (!iframeElement) throw new Error('CAPTCHA Turnstile não encontrado');
+    const src = await iframeElement.getAttribute('src');
+    if (!src) throw new Error('Não foi possível obter sitekey do CAPTCHA');
+    const match = src.match(/k=([a-zA-Z0-9_-]+)/);
     if (!match) throw new Error('Sitekey não encontrado');
 
     const captchaToken = await solveTurnstile(match[1], URL);
