@@ -37,7 +37,6 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
   let page: Page | undefined;
 
   try {
-    // Launch headless with anti-bot features
     browser = await chromium.launch({
       headless: true,
       args: [
@@ -55,7 +54,7 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
     await page.screenshot({ path: path.join(screenshotsDir, 'page_loaded.png') });
 
-    // Fecha anúncios ou modais
+    // Fecha anúncios/modais
     const dismissSelectors = [
       '#dismiss-button',
       '[aria-label="Fechar anúncio"]',
@@ -93,20 +92,33 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
     await votarBtn.click({ force: true });
     await page.screenshot({ path: path.join(screenshotsDir, 'after_click_votar.png') });
 
-    // Espera o Turnstile aparecer dentro do iframe
-    const iframeElement = await page.waitForSelector('iframe[src*="turnstile"]', { timeout: 40000 });
-    if (!iframeElement) throw new Error('CAPTCHA Turnstile não encontrado');
-    const src = await iframeElement.getAttribute('src');
-    if (!src) throw new Error('Não foi possível obter sitekey do CAPTCHA');
-    const match = src.match(/k=([a-zA-Z0-9_-]+)/);
-    if (!match) throw new Error('Sitekey não encontrado');
+    // Fallback para Turnstile (máx 3 tentativas)
+    let iframeElement;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        iframeElement = await page.waitForSelector('iframe[src*="turnstile"]', { timeout: 15000 });
+        if (iframeElement) break;
+      } catch {
+        console.log(`⚠️ Turnstile não encontrado, retry ${attempt + 1}`);
+      }
+    }
 
-    const captchaToken = await solveTurnstile(match[1], URL);
-
-    await page.evaluate((token) => {
-      const input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
-      if (input) input.value = token;
-    }, captchaToken);
+    if (iframeElement) {
+      const src = await iframeElement.getAttribute('src');
+      if (src) {
+        const match = src.match(/k=([a-zA-Z0-9_-]+)/);
+        if (match) {
+          const captchaToken = await solveTurnstile(match[1], URL);
+          await page.evaluate((token) => {
+            const input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
+            if (input) input.value = token;
+          }, captchaToken);
+          console.log('✅ CAPTCHA resolvido via 2Captcha');
+        }
+      }
+    } else {
+      console.log('⚠️ Turnstile não apareceu, pulando CAPTCHA');
+    }
 
     // Confirmar envio
     const confirmBtn = await page.$('button#close-modal.close.register-votes[type="submit"]');
@@ -120,7 +132,6 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
     else
       console.log('⚠️ Status de envio incerto');
 
-    // Salvar vídeo
     const videoPath = await page.video()?.path();
     if (videoPath) console.log(`📹 Vídeo gravado em: ${videoPath}`);
 
