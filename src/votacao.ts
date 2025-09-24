@@ -1,10 +1,18 @@
 import { chromium, Browser, Page } from 'playwright';
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
 
 const URL = 'https://vote.breaktudoawards.com/vote/serie-gl-do-ano/';
 const CANDIDATO = 'Harmony Secret';
 const VOTOS = 5;
 const API_KEY_2CAPTCHA = process.env.API_KEY_2CAPTCHA;
+
+const screenshotsDir = path.join(__dirname, '..', 'screenshots');
+const videosDir = path.join(__dirname, '..', 'videos');
+
+if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir);
+if (!fs.existsSync(videosDir)) fs.mkdirSync(videosDir);
 
 async function solveTurnstile(siteKey: string, url: string): Promise<string> {
   const res = await axios.get(
@@ -15,7 +23,9 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
 
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 5000));
-    const result = await axios.get(`http://2captcha.com/res.php?key=${API_KEY_2CAPTCHA}&action=get&id=${captchaId}&json=1`);
+    const result = await axios.get(
+      `http://2captcha.com/res.php?key=${API_KEY_2CAPTCHA}&action=get&id=${captchaId}&json=1`
+    );
     if (result.data.status === 1) return result.data.request;
   }
 
@@ -27,11 +37,18 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
   let page: Page | undefined;
 
   try {
+    // Launch headless with video recording
     browser = await chromium.launch({ headless: true, args: ['--window-size=1680,1050'] });
-    const context = await browser.newContext({ viewport: { width: 1680, height: 1050 } });
+    const context = await browser.newContext({
+      viewport: { width: 1680, height: 1050 },
+      recordVideo: { dir: videosDir, size: { width: 1680, height: 1050 } }
+    });
+
     page = await context.newPage();
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.screenshot({ path: path.join(screenshotsDir, 'page_loaded.png') });
 
+    // Fecha anúncios ou modais
     const dismissSelectors = [
       '#dismiss-button',
       '[aria-label="Fechar anúncio"]',
@@ -42,23 +59,35 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
 
     for (const sel of dismissSelectors) {
       const elements = await page.$$(sel);
-      for (const el of elements) try { await el.click(); } catch {}
+      for (const el of elements) {
+        try {
+          await el.click({ force: true });
+          await page.waitForTimeout(1000); // espera overlay sumir
+        } catch {}
+      }
     }
 
+    // Espera candidato estar visível
+    await page.waitForSelector(`text="${CANDIDATO}"`, { state: 'visible', timeout: 20000 });
     const candidatoEl = await page.$(`text="${CANDIDATO}"`);
     if (!candidatoEl) throw new Error('Candidato não encontrado');
 
+    // Votos
     for (let i = 1; i <= VOTOS; i++) {
       await candidatoEl.scrollIntoViewIfNeeded();
-      await candidatoEl.click();
+      await candidatoEl.click({ force: true });
       await page.waitForTimeout(1000);
+      await page.screenshot({ path: path.join(screenshotsDir, `vote_${i}.png`) });
     }
 
+    // Clicar no botão Votar
     const votarBtn = await page.$(`button:has-text("Votar")`);
     if (!votarBtn) throw new Error('Botão "Votar" não encontrado');
-    await votarBtn.click();
+    await votarBtn.click({ force: true });
+    await page.screenshot({ path: path.join(screenshotsDir, 'after_click_votar.png') });
 
-    await page.waitForSelector('.cf-turnstile > div', { timeout: 15000 });
+    // CAPTCHA Turnstile
+    await page.waitForSelector('.cf-turnstile > div', { timeout: 20000 });
     const iframe = await page.$('iframe[src*="turnstile"]');
     if (!iframe) throw new Error('CAPTCHA Turnstile não encontrado');
 
@@ -74,14 +103,21 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
       if (input) input.value = token;
     }, captchaToken);
 
+    // Confirmar envio
     const confirmBtn = await page.$('button#close-modal.close.register-votes[type="submit"]');
-    if (confirmBtn) await confirmBtn.click();
+    if (confirmBtn) await confirmBtn.click({ force: true });
+    await page.screenshot({ path: path.join(screenshotsDir, 'after_submit.png') });
 
+    // Verificar sucesso
     const bodyText = await page.textContent('body');
-    if (bodyText && /votos enviados|sucesso|obrigado/i.test(bodyText)) console.log('🎉 Votação concluída com sucesso!');
-    else console.log('⚠️ Status de envio incerto');
+    if (bodyText && /votos enviados|sucesso|obrigado/i.test(bodyText))
+      console.log('🎉 Votação concluída com sucesso!');
+    else
+      console.log('⚠️ Status de envio incerto');
 
-    await page.screenshot({ path: 'votosOk.png', fullPage: true });
+    // Salvar vídeo
+    const videoPath = await page.video()?.path();
+    if (videoPath) console.log(`📹 Vídeo gravado em: ${videoPath}`);
 
   } catch (err) {
     console.error('❌ Erro:', err);
