@@ -71,59 +71,66 @@ async function solveTurnstile(siteKey: string, url: string): Promise<string> {
 
     // Espera candidato visível
     await page.waitForSelector(`text="${CANDIDATO}"`, { state: 'visible', timeout: 20000 });
-
-    // Encontra o botão "votar" associado ao candidato
-    const candidatoVoteBtn = await page.locator(`:has-text("${CANDIDATO}") >> xpath=..`).getByRole('button', { name: /votar/i });
-    if (!candidatoVoteBtn) throw new Error('Botão "votar" para o candidato não encontrado');
+    const candidatoEl = await page.$(`text="${CANDIDATO}"`);
+    if (!candidatoEl) throw new Error('Candidato não encontrado');
 
     // Votos
     for (let i = 1; i <= VOTOS; i++) {
-      await candidatoVoteBtn.scrollIntoViewIfNeeded();
-      await candidatoVoteBtn.click({ force: true });
+      await candidatoEl.scrollIntoViewIfNeeded();
+      await candidatoEl.click({ force: true });
       await page.waitForTimeout(1000);
       await page.screenshot({ path: path.join(screenshotsDir, `vote_${i}.png`) });
     }
 
-    // Encontra o elemento Turnstile e obtém o sitekey diretamente do data-sitekey
-    let siteKey;
+    // Clicar no botão Votar
+    const votarBtn = await page.$(`button:has-text("Votar")`);
+    if (!votarBtn) throw new Error('Botão "Votar" não encontrado');
+    await votarBtn.click({ force: true });
+    await page.screenshot({ path: path.join(screenshotsDir, 'after_click_votar.png') });
+
+    // Fallback para Turnstile (máx 3 tentativas)
+    let iframeElement;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const turnstileElement = await page.waitForSelector('.cf-turnstile', { timeout: 15000 });
-        siteKey = await turnstileElement.getAttribute('data-sitekey');
-        if (siteKey) break;
+        iframeElement = await page.waitForSelector('iframe[src*="turnstile"]', { timeout: 15000 });
+        if (iframeElement) break;
       } catch {
-        console.log(`⚠️ Turnstile data-sitekey não encontrado, retry ${attempt + 1}`);
+        console.log(`⚠️ Turnstile não encontrado, retry ${attempt + 1}`);
       }
     }
 
-    if (!siteKey) {
-      console.log('⚠️ Turnstile não apareceu ou sitekey não encontrado, pulando CAPTCHA');
-    } else {
-      const captchaToken = await solveTurnstile(siteKey, URL);
+    if (iframeElement) {
+      const src = await iframeElement.getAttribute('src');
+      if (src) {
+        const match = src.match(/k=([a-zA-Z0-9_-]+)/);
+        if (match) {
+          const captchaToken = await solveTurnstile(match[1], URL);
 
-      // Insere token dinamicamente
-      await page.evaluate((token) => {
-        let input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
-        if (!input) {
-          input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = 'cf-turnstile-response';
-          document.querySelector('form')?.appendChild(input);
+          // Insere token dinamicamente
+          await page.evaluate((token) => {
+            let input = document.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]');
+            if (!input) {
+              input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'cf-turnstile-response';
+              document.querySelector('form')?.appendChild(input);
+            }
+            input.value = token;
+          }, captchaToken);
+
+          console.log('✅ CAPTCHA resolvido via 2Captcha');
         }
-        input.value = token;
-      }, captchaToken);
-
-      console.log('✅ CAPTCHA resolvido via 2Captcha');
+      }
+    } else {
+      console.log('⚠️ Turnstile não apareceu, pulando CAPTCHA');
     }
 
-    // Clicar no botão ENVIAR VOTOS
-    const enviarBtn = await page.getByRole('button', { name: 'ENVIAR VOTOS' });
-    if (!enviarBtn) throw new Error('Botão "ENVIAR VOTOS" não encontrado');
-    await enviarBtn.click({ force: true });
+    // Confirmar envio
+    const confirmBtn = await page.$('button#close-modal.close.register-votes[type="submit"]');
+    if (confirmBtn) await confirmBtn.click({ force: true });
     await page.screenshot({ path: path.join(screenshotsDir, 'after_submit.png') });
 
     // Verificar sucesso
-    await page.waitForTimeout(5000); // Espera um pouco para a resposta
     const bodyText = await page.textContent('body');
     if (bodyText && /votos enviados|sucesso|obrigado/i.test(bodyText))
       console.log('🎉 Votação concluída com sucesso!');
